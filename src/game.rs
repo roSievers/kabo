@@ -97,7 +97,7 @@ impl Player {
 
 impl Game {
     pub fn new(names: Vec<&str>) -> Self {
-        // There are only 4 * 13 cards in the game. If everyone gets one and at
+        // There are only 4 * 13 cards in the game. If everyone gets four and at
         // least two remain in the middle, then up to 12 players are possible.
         assert!(names.len() <= 12,
                 "To many players. There are {}, but only 12 are allowed",
@@ -145,14 +145,20 @@ impl Game {
                 }
             }
             PlayerMessage::DeckDraw => {
-                if self.players[sender_index as usize].state != PlayerState::YourTurn {
-                    return (ServerMessage::IllegalMessage {
-                                state: self.players[sender_index as usize].state,
-                                message: message,
-                            },
-                            None);
+                {
+                    // TODO: Move this into a macro, maybe call it "guard!".
+                    let ref mut player = self.players[sender_index as usize];
+                    if player.state != PlayerState::YourTurn {
+                        return (ServerMessage::IllegalMessage {
+                                    state: player.state,
+                                    message: message,
+                                },
+                                None);
+                    }
                 }
                 let card = self.deck_draw();
+                self.players[sender_index as usize].state = PlayerState::UseCard(card);
+
                 (ServerMessage::DrawResult { card: card }, Some(BroadcastMessage::DeckDraw))
             }
             _ => {
