@@ -1,0 +1,7 @@
+[package]
+name = "kabo"
+version = "0.1.0"
+authors = ["Rolf Sievers <rolf.sievers@posteo.de>"]
+
+[dependencies]
+rand = "*"
