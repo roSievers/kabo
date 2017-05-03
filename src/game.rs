@@ -128,6 +128,22 @@ impl Game {
                   sender_index: u8,
                   message: PlayerMessage)
                   -> (ServerMessage, Option<BroadcastMessage>) {
+
+        // Use this macro to ensure that the player is even allowed to send the
+        // message they just submitted.
+        macro_rules! state_guard(
+            ($state:ident) => {{
+                let ref mut player = self.players[sender_index as usize];
+                if player.state != PlayerState::$state {
+                    return (ServerMessage::IllegalMessage {
+                                state: player.state,
+                                message: message,
+                            },
+                            None);
+                }
+            }}
+        );
+
         match message {
             PlayerMessage::AskState { player_index } => {
                 if let Some(player) = self.players.get(player_index as usize) {
@@ -145,17 +161,8 @@ impl Game {
                 }
             }
             PlayerMessage::DeckDraw => {
-                {
-                    // TODO: Move this into a macro, maybe call it "guard!".
-                    let ref mut player = self.players[sender_index as usize];
-                    if player.state != PlayerState::YourTurn {
-                        return (ServerMessage::IllegalMessage {
-                                    state: player.state,
-                                    message: message,
-                                },
-                                None);
-                    }
-                }
+                state_guard!(YourTurn);
+
                 let card = self.deck_draw();
                 self.players[sender_index as usize].state = PlayerState::UseCard(card);
 
