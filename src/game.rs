@@ -124,10 +124,10 @@ impl Game {
     // This huge function implements the game mechanics. (Might refactor into smaller functions.)
     // It takes the player Message modifies the state
     // Returns a reply message and might return a message for all other players.
-    pub fn update(&mut self,
-                  sender_index: u8,
-                  message: PlayerMessage)
-                  -> (ServerMessage, Option<BroadcastMessage>) {
+    #[allow(dead_code)]
+    pub fn update(&mut self, sender_index: u8, message: PlayerMessage) -> Vec<ServerMessage> {
+        // A vector of all messages this function will return.
+        let mut msgs = Vec::new();
 
         // Use this macro to ensure that the player is even allowed to send the
         // message they just submitted.
@@ -135,11 +135,12 @@ impl Game {
             ($state:ident) => {{
                 let ref mut player = self.players[sender_index as usize];
                 if player.state != PlayerState::$state {
-                    return (ServerMessage::IllegalMessage {
+                    msgs.push(ServerMessage::IllegalMessage {
                                 state: player.state,
                                 message: message,
-                            },
-                            None);
+                            });
+
+                    return msgs;
                 }
             }}
         );
@@ -147,17 +148,15 @@ impl Game {
         match message {
             PlayerMessage::AskState { player_index } => {
                 if let Some(player) = self.players.get(player_index as usize) {
-                    (ServerMessage::StateIs {
-                         player_index: player_index,
-                         state: player.state,
-                     },
-                     None)
+                    msgs.push(ServerMessage::StateIs {
+                                  player_index: player_index,
+                                  state: player.state,
+                              });
                 } else {
-                    (ServerMessage::IllegalIndex {
-                         index: player_index,
-                         bound: self.players.len() as u8,
-                     },
-                     None)
+                    msgs.push(ServerMessage::IllegalIndex {
+                                  index: player_index,
+                                  bound: (self.players.len() - 1) as u8,
+                              });
                 }
             }
             PlayerMessage::DeckDraw => {
@@ -166,13 +165,36 @@ impl Game {
                 let card = self.deck_draw();
                 self.players[sender_index as usize].state = PlayerState::UseCard(card);
 
-                (ServerMessage::DrawResult { card: card }, Some(BroadcastMessage::DeckDraw))
+                msgs.push(ServerMessage::DrawResult { card: card });
+                msgs.push(BroadcastMessage::DeckDraw.by(sender_index));
+            }
+            PlayerMessage::DiscardDraw => {
+                state_guard!(YourTurn);
+
+                let card = self.discard_pile.pop().unwrap();
+                self.players[sender_index as usize].state = PlayerState::UseCard(card);
+
+                msgs.push(ServerMessage::DrawResult { card: card });
+                msgs.push(BroadcastMessage::DeckDraw.by(sender_index));
+            }
+            PlayerMessage::Kabo => {
+                state_guard!(YourTurn);
+
+                self.players[sender_index as usize].state = PlayerState::Kabo;
+
+                msgs.push(ServerMessage::Kabo)
+                // TODO: activate next player!
+                // Problem is, I need to broadcast both Kabo and StartTurn
+                // Looks like I need to return a Vec of messages.
+                unimplemented!();
             }
             _ => {
                 // TODO: All other messages :P
                 unimplemented!();
             }
         }
+
+        msgs
     }
     // Draw a card from the deck. If there is none, shuffle the discard pile as new deck.
     fn deck_draw(&mut self) -> Card {
@@ -245,6 +267,15 @@ pub enum BroadcastMessage {
     Discard { discard: Card },
 }
 
+impl BroadcastMessage {
+    fn by(self, player_index: u8) -> ServerMessage {
+        ServerMessage::SomePlayer {
+            player_index,
+            message: self,
+        }
+    }
+}
+
 #[derive(Debug)]
 // This server message is directed to a player and unless otherwise specified
 // it is about their actions.
@@ -254,29 +285,29 @@ pub enum ServerMessage {
         state: PlayerState,
     },
     DrawResult { card: Card },
-    KaboConfirmation,
-    ReplaceConfirmation { indices: Vec<u8>, cards: Vec<Card> },
-    ReplaceFailiure { indices: Vec<u8>, cards: Vec<Card> },
+    // KaboConfirmation,
+    // ReplaceConfirmation { indices: Vec<u8>, cards: Vec<Card> },
+    // ReplaceFailiure { indices: Vec<u8>, cards: Vec<Card> },
     PeekResult { index: u8, card: Card },
     SpyResult {
         player_index: u8,
         card_index: u8,
         card: Card,
     },
-    SwapConfirmation {
+    /*SwapConfirmation {
         my_index: u8,
         player_index: u8,
         card_index: u8,
-    },
-    DiscardConfirmation,
+    },*/
+    //DiscardConfirmation,
     IllegalMessage {
         message: PlayerMessage,
         state: PlayerState,
     },
     IllegalIndex { index: u8, bound: u8 },
-    OtherPlayer {
+    SomePlayer {
         player_index: u8,
         message: BroadcastMessage,
     },
-    Timeout,
+    // Timeout, // When and how do I use this?
 }
